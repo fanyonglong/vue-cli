@@ -3,8 +3,7 @@
 // Check node version before requiring/doing anything else
 // The user may be on a very old node version
 
-const chalk = require('chalk')
-const semver = require('semver')
+const { chalk, semver } = require('@vue/cli-shared-utils')
 const requiredVersion = require('../package.json').engines.node
 const didYouMean = require('didyoumean')
 
@@ -21,7 +20,7 @@ function checkNodeVersion (wanted, id) {
   }
 }
 
-checkNodeVersion(requiredVersion, 'vue-cli')
+checkNodeVersion(requiredVersion, '@vue/cli')
 
 if (semver.satisfies(process.version, '9.x')) {
   console.log(chalk.red(
@@ -50,7 +49,7 @@ const program = require('commander')
 const loadCommand = require('../lib/util/loadCommand')
 
 program
-  .version(require('../package').version)
+  .version(`@vue/cli ${require('../package').version}`)
   .usage('<command> [options]')
 
 program
@@ -117,6 +116,7 @@ program
   .description('serve a .js or .vue file in development mode with zero config')
   .option('-o, --open', 'Open browser')
   .option('-c, --copy', 'Copy local url to clipboard')
+  .option('-p, --port <port>', 'Port used by the server (default: 8080 or next available port)')
   .action((entry, cmd) => {
     loadCommand('serve', '@vue/cli-service-global').serve(entry, cleanArgs(cmd))
   })
@@ -166,10 +166,20 @@ program
   })
 
 program
-  .command('upgrade [package-name]')
+  .command('outdated')
+  .description('(experimental) check for outdated vue cli service / plugins')
+  .option('--next', 'Also check for alpha / beta / rc versions when upgrading')
+  .action((cmd) => {
+    require('../lib/outdated')(cleanArgs(cmd))
+  })
+
+program
+  .command('upgrade [plugin-name]')
   .description('(experimental) upgrade vue cli service / plugins')
   .option('-t, --to <version>', 'upgrade <package-name> to a version that is not latest')
   .option('-r, --registry <url>', 'Use specified npm registry when installing dependencies')
+  .option('--all', 'Upgrade all plugins')
+  .option('--next', 'Also check for alpha / beta / rc versions when upgrading')
   .action((packageName, cmd) => {
     require('../lib/upgrade')(packageName, cleanArgs(cmd))
   })
@@ -237,12 +247,10 @@ if (!process.argv.slice(2).length) {
   program.outputHelp()
 }
 
-function suggestCommands (cmd) {
-  const availableCommands = program.commands.map(cmd => {
-    return cmd._name
-  })
+function suggestCommands (unknownCommand) {
+  const availableCommands = program.commands.map(cmd => cmd._name)
 
-  const suggestion = didYouMean(cmd, availableCommands)
+  const suggestion = didYouMean(unknownCommand, availableCommands)
   if (suggestion) {
     console.log(`  ` + chalk.red(`Did you mean ${chalk.yellow(suggestion)}?`))
   }

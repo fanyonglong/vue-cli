@@ -1,9 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const LRU = require('lru-cache')
-const semver = require('semver')
-const execa = require('execa')
-const chalk = require('chalk')
+const { chalk, semver } = require('@vue/cli-shared-utils')
 // Connectors
 const cwd = require('./cwd')
 const folders = require('./folders')
@@ -12,15 +10,9 @@ const logs = require('./logs')
 // Context
 const getContext = require('../context')
 // Utils
-const { isPlugin, hasYarn, resolveModule } = require('@vue/cli-shared-utils')
-const getPackageVersion = require('@vue/cli/lib/util/getPackageVersion')
-const {
-  progress: installProgress,
-  installPackage,
-  uninstallPackage,
-  updatePackage
-} = require('@vue/cli/lib/util/installDeps')
-const { getCommand } = require('../util/command')
+const { isPlugin, resolveModule } = require('@vue/cli-shared-utils')
+const { progress: installProgress } = require('@vue/cli/lib/util/executeCommand')
+const PackageManager = require('@vue/cli/lib/util/ProjectPackageManager')
 const { resolveModuleRoot } = require('../util/resolve-path')
 const { notify } = require('../util/notification')
 const { log } = require('../util/logger')
@@ -100,33 +92,17 @@ async function getMetadata (id, context) {
     return metadata
   }
 
-  if (hasYarn()) {
-    try {
-      const { stdout } = await execa('yarn', ['info', id, '--json'], {
-        cwd: cwd.get()
-      })
-      metadata = JSON.parse(stdout).data
-    } catch (e) {
-      // yarn info failed
-    }
-  }
-
-  if (!metadata) {
-    try {
-      const res = await getPackageVersion(id)
-      if (res.statusCode === 200) {
-        metadata = res.body
-      }
-    } catch (e) {
-      // No connection?
-    }
+  try {
+    metadata = await (new PackageManager({ context: cwd.get() })).getMetadata(id)
+  } catch (e) {
+    // No connection?
   }
 
   if (metadata) {
     metadataCache.set(id, metadata)
     return metadata
   } else {
-    log('Dpendencies', chalk.yellow(`Can't load metadata`), id)
+    log('Dependencies', chalk.yellow(`Can't load metadata`), id)
   }
 }
 
@@ -211,7 +187,8 @@ function install ({ id, type, range }, context) {
       arg = id
     }
 
-    await installPackage(cwd.get(), getCommand(cwd.get()), arg, type === 'devDependencies')
+    const pm = new PackageManager({ context: cwd.get() })
+    await pm.add(arg, type === 'devDependencies')
 
     logs.add({
       message: `Dependency ${id} installed`,
@@ -239,7 +216,8 @@ function uninstall ({ id }, context) {
 
     const dep = findOne(id, context)
 
-    await uninstallPackage(cwd.get(), getCommand(cwd.get()), id)
+    const pm = new PackageManager({ context: cwd.get() })
+    await pm.remove(id)
 
     logs.add({
       message: `Dependency ${id} uninstalled`,
@@ -265,7 +243,9 @@ function update ({ id }, context) {
 
     const dep = findOne(id, context)
     const { current, wanted } = await getVersion(dep, context)
-    await updatePackage(cwd.get(), getCommand(cwd.get()), id)
+
+    const pm = new PackageManager({ context: cwd.get() })
+    await pm.upgrade(id)
 
     logs.add({
       message: `Dependency ${id} updated from ${current} to ${wanted}`,
@@ -310,9 +290,8 @@ function updateAll (context) {
       args: [updatedDeps.length]
     })
 
-    await updatePackage(cwd.get(), getCommand(cwd.get()), updatedDeps.map(
-      p => p.id
-    ).join(' '))
+    const pm = new PackageManager({ context: cwd.get() })
+    await pm.upgrade(updatedDeps.map(p => p.id).join(' '))
 
     notify({
       title: `Dependencies updated`,

@@ -23,6 +23,7 @@ new Vue({
 }).$mount('#app')
 `.trim())
 fs.writeFileSync(path.resolve(templateDir, 'empty-entry.js'), `;`)
+fs.writeFileSync(path.resolve(templateDir, 'main.ts'), `const a: string = 'hello';`)
 fs.writeFileSync(path.resolve(templateDir, 'hello.vue'), `
 <template>
   <p>Hello, {{ msg }}</p>
@@ -256,7 +257,7 @@ test('api: extendPackage merge dependencies', async () => {
 })
 
 test('api: warn invalid dep range', async () => {
-  new Generator('/', { plugins: [
+  const generator = new Generator('/', { plugins: [
     {
       id: 'test1',
       apply: api => {
@@ -269,6 +270,8 @@ test('api: warn invalid dep range', async () => {
     }
   ] })
 
+  await generator.generate()
+
   expect(logs.warn.some(([msg]) => {
     return (
       msg.match(/invalid version range for dependency "foo"/) &&
@@ -278,7 +281,7 @@ test('api: warn invalid dep range', async () => {
 })
 
 test('api: extendPackage dependencies conflict', async () => {
-  new Generator('/', { plugins: [
+  const generator = new Generator('/', { plugins: [
     {
       id: 'test1',
       apply: api => {
@@ -301,6 +304,8 @@ test('api: extendPackage dependencies conflict', async () => {
     }
   ] })
 
+  await generator.generate()
+
   expect(logs.warn.some(([msg]) => {
     return (
       msg.match(/conflicting versions for project dependency "foo"/) &&
@@ -312,7 +317,7 @@ test('api: extendPackage dependencies conflict', async () => {
 })
 
 test('api: extendPackage merge warn nonstrictly semver deps', async () => {
-  new Generator('/', { plugins: [
+  const generator = new Generator('/', { plugins: [
     {
       id: 'test3',
       apply: api => {
@@ -334,6 +339,8 @@ test('api: extendPackage merge warn nonstrictly semver deps', async () => {
       }
     }
   ] })
+
+  await generator.generate()
 
   expect(logs.warn.some(([msg]) => {
     return (
@@ -436,10 +443,10 @@ test('api: hasPlugin', () => {
   ] })
 })
 
-test('api: onCreateComplete', () => {
+test('api: onCreateComplete', async () => {
   const fn = () => {}
   const cbs = []
-  new Generator('/', {
+  const generator = new Generator('/', {
     plugins: [
       {
         id: 'test',
@@ -448,8 +455,31 @@ test('api: onCreateComplete', () => {
         }
       }
     ],
-    completeCbs: cbs
+    afterInvokeCbs: cbs
   })
+
+  await generator.generate()
+
+  expect(cbs).toContain(fn)
+})
+
+test('api: afterInvoke', async () => {
+  const fn = () => {}
+  const cbs = []
+  const generator = new Generator('/', {
+    plugins: [
+      {
+        id: 'test',
+        apply: api => {
+          api.afterInvoke(fn)
+        }
+      }
+    ],
+    afterInvokeCbs: cbs
+  })
+
+  await generator.generate()
+
   expect(cbs).toContain(fn)
 })
 
@@ -499,6 +529,23 @@ test('api: injectImports to empty file', async () => {
 
   await generator.generate()
   expect(fs.readFileSync('/main.js', 'utf-8')).toMatch(/import foo from 'foo'\r?\nimport bar from 'bar'/)
+})
+
+test('api: injectImports to typescript file', async () => {
+  const generator = new Generator('/', { plugins: [
+    {
+      id: 'test',
+      apply: api => {
+        api.injectImports('main.ts', `import foo from 'foo'`)
+        api.render({
+          'main.ts': path.join(templateDir, 'main.ts')
+        })
+      }
+    }
+  ] })
+
+  await generator.generate()
+  expect(fs.readFileSync('/main.ts', 'utf-8')).toMatch(/import foo from 'foo'/)
 })
 
 test('api: addEntryDuplicateImport', async () => {
